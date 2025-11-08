@@ -35,7 +35,6 @@ export async function initBalloonCelebration() {
 export function startBalloonCelebration() {
   if (!initialized || !overlay || !container) return;
   overlay.classList.remove('hidden');
-  overlay.classList.add('balloon-overlay--active');
   container.innerHTML = '';
   for (let i = 0; i < BALLOON_COUNT; i += 1) {
     const balloon = createBalloon(i);
@@ -46,7 +45,6 @@ export function startBalloonCelebration() {
 export function stopBalloonCelebration() {
   if (!initialized || !overlay || !container) return;
   overlay.classList.add('hidden');
-  overlay.classList.remove('balloon-overlay--active');
   container.innerHTML = '';
 }
 

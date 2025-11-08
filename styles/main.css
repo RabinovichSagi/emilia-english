@@ -349,6 +349,12 @@ main {
   font-weight: 800;
   color: var(--primary-purple-dark);
 }
+
+.letter-instruction {
+  font-size: 1.1rem;
+  color: var(--primary-purple-dark);
+  margin-bottom: 8px;
+}
 .option-button.image-option {
   padding: 10px;
 }
@@ -498,10 +504,6 @@ main {
   pointer-events: none;
   z-index: 60;
   overflow: hidden;
-}
-
-.balloon-overlay.balloon-overlay--active {
-  pointer-events: auto;
 }
 
 .balloon-container {

@@ -94,6 +94,7 @@ const state = {
     incorrect: null,
   },
   pendingPromptAudio: null,
+  balloonTimeoutId: null,
 };
 
 document.addEventListener('DOMContentLoaded', init);
@@ -209,7 +210,34 @@ async function loadWords() {
   if (!json || !Array.isArray(json.words)) {
     throw new Error('Invalid words.json format: expected { words: [...] }');
   }
-  state.words = json.words;
+  state.words = json.words.map(decorateWordForLetters);
+}
+
+function decorateWordForLetters(word) {
+  const decorated = { ...word };
+  if (
+    typeof decorated.initialLetter === 'string' &&
+    decorated.initialLetter.length > 0
+  ) {
+    decorated.initialLetter = normalizeLetter(decorated.initialLetter) ?? '';
+    return decorated;
+  }
+  if (!decorated.firstLetterOptional) {
+    decorated.initialLetter = '';
+    return decorated;
+  }
+  const derived = deriveInitialLetterFromEnglish(decorated.english);
+  decorated.initialLetter = derived;
+  return decorated;
+}
+
+function deriveInitialLetterFromEnglish(englishWord) {
+  if (!englishWord || typeof englishWord !== 'string') {
+    return '';
+  }
+  const match = englishWord.trim().match(/^[a-z]/i);
+  const normalized = match ? normalizeLetter(match[0]) : null;
+  return normalized ?? '';
 }
 
 function computeAvailableFormats(words) {
@@ -246,6 +274,7 @@ function handleStartSession() {
   state.completedBaseExercises = 0;
   updateProgressIndicator();
   switchScreen(dom.startScreen, dom.sessionScreen);
+  clearBalloonTimeout();
   stopBalloonCelebration();
   renderNextExercise(true);
 }
@@ -265,12 +294,14 @@ function handleRestart() {
   state.completedBaseExercises = 0;
   updateProgressIndicator();
   switchScreen(dom.summaryScreen, dom.sessionScreen);
+  clearBalloonTimeout();
   stopBalloonCelebration();
   renderNextExercise(true);
 }
 
 function returnHome() {
   switchScreen(dom.summaryScreen, dom.startScreen);
+  clearBalloonTimeout();
   stopBalloonCelebration();
 }
 
@@ -358,6 +389,43 @@ function buildSessionQueue() {
         if (usedFormats.size >= 3) break;
       }
     }
+  }
+
+  const ensureLetterCoverage = () => {
+    const letterNeeded = 2;
+    let letterCount = selected.filter(
+      (exercise) => exercise.format.requires.initialLetter
+    ).length;
+    if (letterCount >= letterNeeded) return letterCount;
+    const letterCandidates = allExercises.filter(
+      (exercise) => exercise.format.requires.initialLetter
+    );
+    const selectedKey = (exercise) => `${exercise.word.id}-${exercise.format.id}`;
+    const existingKeys = new Set(selected.map(selectedKey));
+    for (const candidate of letterCandidates) {
+      if (letterCount >= letterNeeded) break;
+      const key = selectedKey(candidate);
+      if (existingKeys.has(key)) {
+        continue;
+      }
+      const replaceIndex = selected.findIndex(
+        (exercise) => !exercise.format.requires.initialLetter
+      );
+      if (replaceIndex === -1) {
+        break;
+      }
+      selected[replaceIndex] = createExercise(candidate.word, candidate.format);
+      existingKeys.add(key);
+      letterCount += 1;
+    }
+    return letterCount;
+  };
+
+  const finalLetterCount = ensureLetterCoverage();
+  if (finalLetterCount < 2) {
+    console.warn(
+      'Unable to schedule two letter drills—check that enough words have initialLetter metadata.'
+    );
   }
 
   return selected;
@@ -564,7 +632,22 @@ function renderPrompt(word, format) {
   stopCurrentAudio();
   clearPendingPromptAudio();
 
+  if (format.answerType === 'letter') {
+    const answerInstruction = document.createElement('div');
+    answerInstruction.className = 'letter-instruction';
+    answerInstruction.dir = 'rtl';
+    answerInstruction.textContent = 'בְּאֵיזוֹ אוֹת מַתְחִילָה הַמִּלָּה?';
+    dom.promptArea.appendChild(answerInstruction);
+  }
+
   if (format.promptType === 'letter') {
+    dom.promptArea.style.direction = 'rtl';
+    dom.promptArea.style.gap = '20px';
+    const instruction = document.createElement('div');
+    instruction.className = 'letter-instruction';
+    instruction.dir = 'rtl';
+    instruction.textContent = 'אֵיזוֹ מִלָּה מַתְחִילָה בָּאוֹת?';
+    dom.promptArea.appendChild(instruction);
     const chip = document.createElement('span');
     chip.className = 'letter-chip';
     chip.textContent = (word.initialLetter || '?').toUpperCase();
@@ -985,6 +1068,7 @@ function showSessionSummary() {
 
   switchScreen(dom.sessionScreen, dom.summaryScreen);
   startBalloonCelebration();
+  scheduleBalloonTimeout();
 }
 
 function exportProgressLog() {
@@ -1023,6 +1107,21 @@ function clearPendingPromptAudio() {
   if (state.pendingPromptAudio) {
     clearTimeout(state.pendingPromptAudio);
     state.pendingPromptAudio = null;
+  }
+}
+
+function scheduleBalloonTimeout() {
+  clearBalloonTimeout();
+  state.balloonTimeoutId = window.setTimeout(() => {
+    stopBalloonCelebration();
+    clearBalloonTimeout();
+  }, 5000);
+}
+
+function clearBalloonTimeout() {
+  if (state.balloonTimeoutId) {
+    clearTimeout(state.balloonTimeoutId);
+    state.balloonTimeoutId = null;
   }
 }
 
@@ -1094,3 +1193,7 @@ function shuffleArray(array) {
   }
   return copy;
 }
+  if (format.promptType !== 'letter') {
+    dom.promptArea.style.direction = '';
+    dom.promptArea.style.gap = '';
+  }
