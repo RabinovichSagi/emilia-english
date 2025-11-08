@@ -240,6 +240,8 @@ main {
 }
 
 .prompt-area {
+  direction: rtl;
+  gap: 20px;
   display: flex;
   justify-content: center;
   align-items: center;
