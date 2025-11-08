@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Emilia English Practice</title>
+    <link rel="stylesheet" href="styles/main.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="app-header">
+        <h1>Emilia English Practice</h1>
+        <button id="export-progress" class="ghost-button" type="button">
+          Export Progress Log
+        </button>
+      </header>
+
+      <main>
+        <section id="start-screen" class="screen">
+          <div class="card intro-card">
+            <h2>Ready to practice?</h2>
+            <p>
+              Tap Start and I’ll mix words, pictures, and sounds to keep things
+              fun.
+            </p>
+            <label class="slider-label" for="session-length-input">
+              How many exercises?
+              <span id="session-length-display">10</span>
+            </label>
+            <input
+              id="session-length-input"
+              type="range"
+              min="5"
+              max="20"
+              step="1"
+              value="10"
+            />
+            <button id="start-button" class="primary-button" type="button">
+              Start Practice
+            </button>
+          </div>
+        </section>
+
+        <section id="session-screen" class="screen hidden">
+          <div class="card card-active hidden" id="exercise-card">
+            <div class="session-meta">
+              <span id="progress-indicator">0 / 0</span>
+              <button id="end-session-button" class="ghost-button" type="button">
+                End Session
+              </button>
+            </div>
+            <div id="instruction" class="instruction-text"></div>
+            <div id="prompt-area" class="prompt-area"></div>
+            <div id="options-area" class="options-grid"></div>
+            <div id="feedback-area" class="feedback-area" role="alert"></div>
+          </div>
+        </section>
+
+        <section id="summary-screen" class="screen hidden">
+          <div class="card summary-card">
+            <h2>Great work!</h2>
+            <p id="summary-overview"></p>
+            <div id="summary-details"></div>
+            <div class="summary-actions">
+              <button id="restart-button" class="primary-button" type="button">
+                Practice Again
+              </button>
+              <button id="back-home-button" class="ghost-button" type="button">
+                Back Home
+              </button>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <div id="transition-overlay" class="transition-overlay hidden"></div>
+    </div>
+
+    <template id="option-template">
+      <button class="option-button" type="button"></button>
+    </template>
+
+    <script type="module" src="scripts/main.js"></script>
+  </body>
+</html>
