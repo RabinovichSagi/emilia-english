@@ -243,17 +243,6 @@
       "firstLetterOptional": true
     },
     {
-      "id": "dog",
-      "english": "dog",
-      "hebrew": "כלב",
-      "audio": "assets/audio/dog.mp3",
-      "image": "assets/images/dog.png",
-      "distractorWordIds": [],
-      "tags": [],
-      "difficulty": 1,
-      "firstLetterOptional": true
-    },
-    {
       "id": "ambulance",
       "english": "ambulance",
       "hebrew": "אמבולנס",
@@ -281,17 +270,6 @@
       "hebrew": "אסטרונאוט",
       "audio": "assets/audio/astronaut.mp3",
       "image": "assets/images/astronaut.png",
-      "distractorWordIds": [],
-      "tags": [],
-      "difficulty": 1,
-      "firstLetterOptional": true
-    },
-    {
-      "id": "desk",
-      "english": "desk",
-      "hebrew": "שולחן",
-      "audio": "assets/audio/desk.mp3",
-      "image": "assets/images/desk.png",
       "distractorWordIds": [],
       "tags": [],
       "difficulty": 1,
@@ -626,6 +604,28 @@
       "tags": [],
       "difficulty": 1,
       "firstLetterOptional": true
+    },
+    {
+      "id": "desk",
+      "english": "desk",
+      "hebrew": "שולחן",
+      "audio": "assets/audio/desk.mp3",
+      "image": "assets/images/desk.png",
+      "distractorWordIds": [],
+      "tags": [],
+      "difficulty": 1,
+      "firstLetterOptional": false
+    },
+    {
+      "id": "dog",
+      "english": "dog",
+      "hebrew": "כלב",
+      "audio": "assets/audio/dog.mp3",
+      "image": "assets/images/dog.png",
+      "distractorWordIds": [],
+      "tags": [],
+      "difficulty": 1,
+      "firstLetterOptional": false
     }
   ]
 }

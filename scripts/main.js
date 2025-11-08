@@ -1,3 +1,9 @@
+import {
+  initBalloonCelebration,
+  startBalloonCelebration,
+  stopBalloonCelebration,
+} from './balloons.js';
+
 /**
  * Emilia English Practice
  * Vanilla JS implementation designed to run directly on GitHub Pages without build tooling.
@@ -93,6 +99,7 @@ const state = {
 document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
+  initBalloonCelebration();
   cacheDomReferences();
   attachEventListeners();
   loadStoredSettings();
@@ -120,7 +127,6 @@ function cacheDomReferences() {
   dom.sessionScreen = document.getElementById('session-screen');
   dom.summaryScreen = document.getElementById('summary-screen');
   dom.exerciseCard = document.getElementById('exercise-card');
-  dom.instruction = document.getElementById('instruction');
   dom.promptArea = document.getElementById('prompt-area');
   dom.optionsArea = document.getElementById('options-area');
   dom.feedbackArea = document.getElementById('feedback-area');
@@ -240,6 +246,7 @@ function handleStartSession() {
   state.completedBaseExercises = 0;
   updateProgressIndicator();
   switchScreen(dom.startScreen, dom.sessionScreen);
+  stopBalloonCelebration();
   renderNextExercise(true);
 }
 
@@ -258,11 +265,13 @@ function handleRestart() {
   state.completedBaseExercises = 0;
   updateProgressIndicator();
   switchScreen(dom.summaryScreen, dom.sessionScreen);
+  stopBalloonCelebration();
   renderNextExercise(true);
 }
 
 function returnHome() {
   switchScreen(dom.summaryScreen, dom.startScreen);
+  stopBalloonCelebration();
 }
 
 function switchScreen(from, to) {
@@ -535,7 +544,6 @@ function renderNextExercise(skipTransition = false) {
     state.attemptStartTime = performance.now();
     dom.feedbackArea.textContent = '';
     dom.feedbackArea.className = 'feedback-area';
-    renderInstruction(state.currentExercise.format);
     renderPrompt(state.currentExercise.word, state.currentExercise.format);
     renderOptions(state.currentExercise);
     updateProgressIndicator();
@@ -548,10 +556,6 @@ function renderNextExercise(skipTransition = false) {
   } else {
     runTransition(render);
   }
-}
-
-function renderInstruction(format) {
-  dom.instruction.textContent = format.instruction;
 }
 
 function renderPrompt(word, format) {
@@ -980,6 +984,7 @@ function showSessionSummary() {
   }
 
   switchScreen(dom.sessionScreen, dom.summaryScreen);
+  startBalloonCelebration();
 }
 
 function exportProgressLog() {
