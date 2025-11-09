@@ -11,6 +11,7 @@ import {
  */
 
 const STORAGE_KEY = 'emiliaEnglishProgressLog';
+const WORD_OPTION_FLOOR_KEY = 'emiliaEnglishWordOptionFloor';
 const SETTINGS_KEY = 'emiliaEnglishSettings';
 const DEFAULT_SESSION_LENGTH = 10;
 const MIN_SESSION_LENGTH = 5;
@@ -66,6 +67,11 @@ const EXERCISE_FORMATS = [
   },
 ];
 
+const MASTERY_MIN_ATTEMPTS = 4;
+const MASTERY_ACCURACY_THRESHOLD = 0.85;
+const MAX_NEW_WORDS_PER_SESSION = 3;
+const MAX_REPEAT_PASSES = 2;
+
 const FORMAT_LABELS = {
   text: 'English word',
   translation: 'Hebrew word',
@@ -80,6 +86,8 @@ const state = {
   formats: [],
   history: [],
   performanceMap: new Map(),
+  optionStateMap: new Map(),
+  wordOptionFloor: new Map(),
   sessionLength: DEFAULT_SESSION_LENGTH,
   queue: [],
   sessionPlanLength: DEFAULT_SESSION_LENGTH,
@@ -104,6 +112,7 @@ async function init() {
   cacheDomReferences();
   attachEventListeners();
   loadStoredSettings();
+  loadWordOptionFloor();
   loadHistory();
 
   try {
@@ -184,11 +193,31 @@ function loadStoredSettings() {
   }
 }
 
+function loadWordOptionFloor() {
+  const stored = localStorage.getItem(WORD_OPTION_FLOOR_KEY);
+  if (!stored) {
+    state.wordOptionFloor = new Map();
+    return;
+  }
+  try {
+    const parsed = JSON.parse(stored);
+    const entries = Object.entries(parsed ?? {}).map(([wordId, level]) => [
+      wordId,
+      Number(level) || 1,
+    ]);
+    state.wordOptionFloor = new Map(entries);
+  } catch (error) {
+    console.warn('Failed to parse word option floor', error);
+    state.wordOptionFloor = new Map();
+  }
+}
+
 function loadHistory() {
   const stored = localStorage.getItem(STORAGE_KEY);
   if (!stored) {
     state.history = [];
     state.performanceMap = new Map();
+    state.optionStateMap = new Map();
     return;
   }
   try {
@@ -199,6 +228,7 @@ function loadHistory() {
     state.history = [];
   }
   state.performanceMap = buildPerformanceMap(state.history);
+  state.optionStateMap = buildOptionStateMap(state.history);
 }
 
 async function loadWords() {
@@ -272,6 +302,7 @@ function handleStartSession() {
   state.queue = buildSessionQueue();
   state.sessionPlanLength = state.queue.length;
   state.completedBaseExercises = 0;
+  logPlannedExercises(state.queue);
   updateProgressIndicator();
   switchScreen(dom.startScreen, dom.sessionScreen);
   clearBalloonTimeout();
@@ -292,6 +323,7 @@ function handleRestart() {
   state.queue = buildSessionQueue();
   state.sessionPlanLength = state.queue.length;
   state.completedBaseExercises = 0;
+  logPlannedExercises(state.queue);
   updateProgressIndicator();
   switchScreen(dom.summaryScreen, dom.sessionScreen);
   clearBalloonTimeout();
@@ -342,8 +374,7 @@ function buildSessionQueue() {
     throw new Error('No valid exercise combinations available.');
   }
 
-  // Sort by priority (lower success rate first) and randomize within buckets
-  allExercises.sort((a, b) => {
+  const sortedExercises = allExercises.sort((a, b) => {
     if (a.priorityScore === b.priorityScore) {
       return Math.random() - 0.5;
     }
@@ -353,90 +384,87 @@ function buildSessionQueue() {
   const sessionLength = clampValue(
     state.sessionLength,
     MIN_SESSION_LENGTH,
-    Math.min(MAX_SESSION_LENGTH, allExercises.length)
+    Math.min(MAX_SESSION_LENGTH, sortedExercises.length)
   );
 
+  const wordStats = buildWordStatsMap();
+  const unmasteredSet = new Set();
+  const masteredSet = new Set();
+  const newSet = new Set();
+
+  state.words.forEach((word) => {
+    const stats = wordStats.get(word.id);
+    if (!stats) {
+      newSet.add(word.id);
+    } else if (stats.mastered) {
+      masteredSet.add(word.id);
+    } else {
+      unmasteredSet.add(word.id);
+    }
+  });
+
   const selected = [];
-  const usedFormats = new Map();
+  const newWordsIntroduced = new Set();
 
-  for (const candidate of allExercises) {
-    if (selected.length >= sessionLength) {
-      break;
-    }
-    selected.push(createExercise(candidate.word, candidate.format));
-    usedFormats.set(candidate.format.id, true);
-  }
-
-  // Ensure variety: force at least three unique formats when possible.
-  if (usedFormats.size < 3 && allExercises.length >= 3) {
-    const missingFormats = state.formats
-      .map((format) => format.id)
-      .filter((id) => !usedFormats.has(id));
-    for (const formatId of missingFormats) {
-      const replacementCandidate = allExercises.find(
-        (entry) => entry.format.id === formatId
-      );
-      if (!replacementCandidate) continue;
-      const replaceIndex = selected.findIndex(
-        (exercise) => exercise.format.id === selected[0].format.id
-      );
-      if (replaceIndex >= 0) {
-        selected[replaceIndex] = createExercise(
-          replacementCandidate.word,
-          replacementCandidate.format
-        );
-        usedFormats.set(formatId, true);
-        if (usedFormats.size >= 3) break;
+  const takeFromSet = (wordSet, { isNew = false } = {}) => {
+    if (!wordSet || wordSet.size === 0) return;
+    const passes = isNew ? 1 : MAX_REPEAT_PASSES;
+    for (let pass = 0; pass < passes; pass += 1) {
+      const beforeCount = selected.length;
+      for (const candidate of sortedExercises) {
+        if (selected.length >= sessionLength) break;
+        if (!wordSet.has(candidate.word.id)) continue;
+        if (
+          isNew &&
+          !newWordsIntroduced.has(candidate.word.id) &&
+          newWordsIntroduced.size >= MAX_NEW_WORDS_PER_SESSION
+        ) {
+          continue;
+        }
+        selected.push(createExercise(candidate.word, candidate.format));
+        if (isNew) {
+          newWordsIntroduced.add(candidate.word.id);
+        }
       }
-    }
-  }
-
-  const ensureLetterCoverage = () => {
-    const letterNeeded = 2;
-    let letterCount = selected.filter(
-      (exercise) => exercise.format.requires.initialLetter
-    ).length;
-    if (letterCount >= letterNeeded) return letterCount;
-    const letterCandidates = allExercises.filter(
-      (exercise) => exercise.format.requires.initialLetter
-    );
-    const selectedKey = (exercise) => `${exercise.word.id}-${exercise.format.id}`;
-    const existingKeys = new Set(selected.map(selectedKey));
-    for (const candidate of letterCandidates) {
-      if (letterCount >= letterNeeded) break;
-      const key = selectedKey(candidate);
-      if (existingKeys.has(key)) {
-        continue;
-      }
-      const replaceIndex = selected.findIndex(
-        (exercise) => !exercise.format.requires.initialLetter
-      );
-      if (replaceIndex === -1) {
+      if (selected.length >= sessionLength || selected.length === beforeCount) {
         break;
       }
-      selected[replaceIndex] = createExercise(candidate.word, candidate.format);
-      existingKeys.add(key);
-      letterCount += 1;
     }
-    return letterCount;
   };
 
-  const finalLetterCount = ensureLetterCoverage();
-  if (finalLetterCount < 2) {
-    console.warn(
-      'Unable to schedule two letter drills—check that enough words have initialLetter metadata.'
-    );
+  if (unmasteredSet.size > 0) {
+    takeFromSet(unmasteredSet);
+    if (selected.length === 0 && newSet.size > 0) {
+      takeFromSet(newSet, { isNew: true });
+    }
+    if (selected.length < sessionLength) {
+      takeFromSet(masteredSet);
+    }
+  } else {
+    takeFromSet(newSet, { isNew: true });
+    if (selected.length < sessionLength) {
+      takeFromSet(masteredSet);
+    }
   }
 
-  return selected;
+  if (selected.length === 0) {
+    for (const candidate of sortedExercises) {
+      if (selected.length >= sessionLength) break;
+      selected.push(createExercise(candidate.word, candidate.format));
+    }
+  }
+
+  return selected.slice(0, sessionLength);
 }
 
 function createExercise(word, format) {
-  const options = buildOptions(word, format);
+  const optionCount = getOptionCountForTuple(word.id, format.id);
+  const options = buildOptions(word, format, optionCount);
   return {
     word,
     format,
     options,
+    optionCount: options.length,
     attempts: 0,
     hintUsed: false,
     id: `${word.id}-${format.id}-${crypto.randomUUID?.() ?? Math.random()}`,
@@ -445,11 +473,12 @@ function createExercise(word, format) {
   };
 }
 
-function buildOptions(word, format) {
+function buildOptions(word, format, optionCount) {
   if (format.answerType === 'letter') {
-    return buildLetterOptions(word, format);
+    return buildLetterOptions(word, optionCount);
   }
-  const distractorIds = pickDistractorIds(word, format);
+  const desiredDistractors = Math.max(optionCount - 1, 0);
+  const distractorIds = pickDistractorIds(word, format, desiredDistractors);
   const wordMap = new Map(state.words.map((w) => [w.id, w]));
   const optionIds = [word.id, ...distractorIds];
   const options = optionIds.map((id) => {
@@ -462,7 +491,7 @@ function buildOptions(word, format) {
   return shuffleArray(options);
 }
 
-function buildLetterOptions(word) {
+function buildLetterOptions(word, optionCount) {
   const targetLetter = normalizeLetter(word.initialLetter);
   if (!targetLetter) {
     throw new Error(`Word ${word.id} missing initialLetter for letter drill`);
@@ -498,7 +527,11 @@ function buildLetterOptions(word) {
     distractors.push(filler);
   }
 
-  const letters = shuffleArray([targetLetter, ...distractors.slice(0, 3)]);
+  const totalOptions = clampValue(optionCount, 1, 4);
+  const letters = shuffleArray([
+    targetLetter,
+    ...distractors.slice(0, totalOptions - 1),
+  ]);
   return letters.map((letter) => ({
     optionId: `letter-${letter}`,
     label: letter.toUpperCase(),
@@ -531,8 +564,10 @@ function transformWordToOption(word, format, isCorrect) {
   };
 }
 
-function pickDistractorIds(word, format) {
-  const desiredCount = 3;
+function pickDistractorIds(word, format, desiredCount = 3) {
+  if (desiredCount <= 0) {
+    return [];
+  }
   const availableIds = new Set();
   const fallbackIds = new Set(
     state.words.map((candidate) => candidate.id).filter((id) => id !== word.id)
@@ -574,7 +609,7 @@ function pickDistractorIds(word, format) {
       `Unable to find enough distractors for word ${word.id} format ${format.id}`
     );
   }
-  return result;
+  return result.slice(0, desiredCount);
 }
 
 function wordSupportsFormat(word, format) {
@@ -614,6 +649,7 @@ function renderNextExercise(skipTransition = false) {
     dom.feedbackArea.className = 'feedback-area';
     renderPrompt(state.currentExercise.word, state.currentExercise.format);
     renderOptions(state.currentExercise);
+    handleSingleOptionPromotion(state.currentExercise);
     updateProgressIndicator();
   };
 
@@ -629,6 +665,8 @@ function renderNextExercise(skipTransition = false) {
 function renderPrompt(word, format) {
   dom.promptArea.innerHTML = '';
   dom.promptArea.style.fontSize = '';
+  dom.promptArea.style.direction = '';
+  dom.promptArea.style.gap = '';
   stopCurrentAudio();
   clearPendingPromptAudio();
 
@@ -903,6 +941,7 @@ function recordAttempt({
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.history));
   updatePerformanceMapWithEntry(entry);
   updateSessionStats(entry);
+  updateOptionStateWithEntry(entry);
 }
 
 function updatePerformanceMapWithEntry(entry) {
@@ -1177,6 +1216,19 @@ function buildPerformanceMap(historyEntries) {
   return map;
 }
 
+function buildOptionStateMap(historyEntries) {
+  const map = new Map();
+  historyEntries.forEach((entry) => {
+    if (!entry.wordId || !entry.formatId) return;
+    const key = buildPerformanceKey(entry.wordId, entry.formatId);
+    if (!map.has(key)) {
+      map.set(key, createDefaultOptionState());
+    }
+    applyOptionStateTransition(map.get(key), entry.result === 'correct');
+  });
+  return map;
+}
+
 function buildPerformanceKey(wordId, formatId) {
   return `${wordId}::${formatId}`;
 }
@@ -1193,7 +1245,111 @@ function shuffleArray(array) {
   }
   return copy;
 }
-  if (format.promptType !== 'letter') {
-    dom.promptArea.style.direction = '';
-    dom.promptArea.style.gap = '';
+
+function getOptionCountForTuple(wordId, formatId) {
+  const key = buildPerformanceKey(wordId, formatId);
+  const entry = state.optionStateMap.get(key);
+  const baseLevel = entry ? entry.level : 1;
+  const floor = state.wordOptionFloor.get(wordId) ?? 1;
+  return clampValue(Math.max(baseLevel, floor), 1, 4);
+}
+
+function updateOptionStateWithEntry(entry) {
+  if (!entry.wordId || !entry.formatId) return;
+  const key = buildPerformanceKey(entry.wordId, entry.formatId);
+  let optionState = state.optionStateMap.get(key);
+  if (!optionState) {
+    optionState = createDefaultOptionState();
+    state.optionStateMap.set(key, optionState);
   }
+  applyOptionStateTransition(optionState, entry.result === 'correct');
+}
+
+function createDefaultOptionState() {
+  return {
+    level: 1,
+    successRun: 0,
+    failureRun: 0,
+  };
+}
+
+function applyOptionStateTransition(optionState, wasCorrect) {
+  if (wasCorrect) {
+    optionState.failureRun = 0;
+    optionState.successRun += 1;
+    if (optionState.level === 1 && optionState.successRun >= 1) {
+      optionState.level = 2;
+      optionState.successRun = 0;
+    } else if (optionState.level === 2 && optionState.successRun >= 2) {
+      optionState.level = 3;
+      optionState.successRun = 0;
+    } else if (optionState.level === 3 && optionState.successRun >= 2) {
+      optionState.level = 4;
+      optionState.successRun = 0;
+    } else if (optionState.level === 4) {
+      optionState.successRun = Math.min(optionState.successRun, 2);
+    }
+  } else {
+    optionState.successRun = 0;
+    optionState.failureRun += 1;
+    if (optionState.level >= 3 && optionState.failureRun >= 2) {
+      optionState.level = 2;
+      optionState.failureRun = 0;
+    } else {
+      optionState.failureRun = Math.min(optionState.failureRun, 2);
+    }
+  }
+  optionState.level = clampValue(optionState.level, 1, 4);
+}
+
+function handleSingleOptionPromotion(exercise) {
+  if (!exercise || exercise.optionCount > 1) return;
+  promoteWordFloor(exercise.word.id, 2);
+}
+
+function promoteWordFloor(wordId, minLevel) {
+  const current = state.wordOptionFloor.get(wordId) ?? 1;
+  if (current >= minLevel) return;
+  state.wordOptionFloor.set(wordId, minLevel);
+  persistWordOptionFloor();
+}
+
+function persistWordOptionFloor() {
+  const payload = Object.fromEntries(state.wordOptionFloor);
+  localStorage.setItem(WORD_OPTION_FLOOR_KEY, JSON.stringify(payload));
+}
+
+function buildWordStatsMap() {
+  const map = new Map();
+  for (const [key, stats] of state.performanceMap.entries()) {
+    const [wordId] = key.split('::');
+    const entry =
+      map.get(wordId) ?? { attempts: 0, correct: 0, accuracy: 0, mastered: false };
+    entry.attempts += stats.attempts || 0;
+    entry.correct += stats.correct || 0;
+    map.set(wordId, entry);
+  }
+  for (const entry of map.values()) {
+    entry.accuracy =
+      entry.attempts === 0 ? 0 : entry.correct / entry.attempts;
+    entry.mastered =
+      entry.attempts >= MASTERY_MIN_ATTEMPTS &&
+      entry.accuracy >= MASTERY_ACCURACY_THRESHOLD;
+  }
+  return map;
+}
+
+function logPlannedExercises(exercises) {
+  if (!Array.isArray(exercises) || exercises.length === 0) {
+    console.info('[Session Plan] No exercises queued.');
+    return;
+  }
+  const timestamp = new Date().toLocaleTimeString();
+  console.groupCollapsed(`[Session Plan ${timestamp}] ${exercises.length} cards`);
+  exercises.forEach((exercise, index) => {
+    console.log(
+      `#${index + 1}: ${exercise.word.english} (${exercise.word.id}) — ${exercise.format.id} [${exercise.format.promptType}→${exercise.format.answerType}] options=${exercise.optionCount}`
+    );
+  });
+  console.groupEnd();
+}
