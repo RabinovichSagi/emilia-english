@@ -41,6 +41,13 @@
             <button id="start-button" class="primary-button" type="button">
               Start Practice
             </button>
+            <button
+              id="open-control-panel"
+              class="ghost-button"
+              type="button"
+            >
+              View Progress Panel
+            </button>
           </div>
         </section>
 
@@ -76,6 +83,21 @@
       </main>
 
       <div id="transition-overlay" class="transition-overlay hidden"></div>
+      <div id="control-panel" class="control-panel hidden">
+        <div class="control-panel-content">
+          <div class="control-panel-header">
+            <h2>Progress Control Panel</h2>
+            <button
+              id="close-control-panel"
+              class="ghost-button"
+              type="button"
+            >
+              Close
+            </button>
+          </div>
+          <div id="control-panel-body" class="control-panel-body"></div>
+        </div>
+      </div>
     </div>
 
     <template id="option-template">

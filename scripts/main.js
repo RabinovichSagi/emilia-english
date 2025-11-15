@@ -71,6 +71,7 @@ const MASTERY_MIN_ATTEMPTS = 4;
 const MASTERY_ACCURACY_THRESHOLD = 0.85;
 const MAX_NEW_WORDS_PER_SESSION = 3;
 const MAX_REPEAT_PASSES = 2;
+const MAX_OCCURRENCES_PER_WORD = 3;
 
 const FORMAT_LABELS = {
   text: 'English word',
@@ -144,6 +145,10 @@ function cacheDomReferences() {
   dom.transitionOverlay = document.getElementById('transition-overlay');
   dom.optionTemplate = document.getElementById('option-template');
   dom.startButton = document.getElementById('start-button');
+  dom.openControlPanelButton = document.getElementById('open-control-panel');
+  dom.closeControlPanelButton = document.getElementById('close-control-panel');
+  dom.controlPanel = document.getElementById('control-panel');
+  dom.controlPanelBody = document.getElementById('control-panel-body');
   dom.sessionLengthInput = document.getElementById('session-length-input');
   dom.sessionLengthDisplay = document.getElementById('session-length-display');
   dom.restartButton = document.getElementById('restart-button');
@@ -169,6 +174,14 @@ function attachEventListeners() {
       SETTINGS_KEY,
       JSON.stringify({ sessionLength: state.sessionLength })
     );
+  });
+
+  dom.openControlPanelButton.addEventListener('click', showControlPanel);
+  dom.closeControlPanelButton.addEventListener('click', hideControlPanel);
+  dom.controlPanel.addEventListener('click', (event) => {
+    if (event.target === dom.controlPanel) {
+      hideControlPanel();
+    }
   });
 }
 
@@ -307,6 +320,7 @@ function handleStartSession() {
   switchScreen(dom.startScreen, dom.sessionScreen);
   clearBalloonTimeout();
   stopBalloonCelebration();
+  hideControlPanel();
   renderNextExercise(true);
 }
 
@@ -328,6 +342,7 @@ function handleRestart() {
   switchScreen(dom.summaryScreen, dom.sessionScreen);
   clearBalloonTimeout();
   stopBalloonCelebration();
+  hideControlPanel();
   renderNextExercise(true);
 }
 
@@ -387,46 +402,72 @@ function buildSessionQueue() {
     Math.min(MAX_SESSION_LENGTH, sortedExercises.length)
   );
 
-  const wordStats = buildWordStatsMap();
+  const wordProgress = buildWordProgressMap();
   const unmasteredSet = new Set();
   const masteredSet = new Set();
   const newSet = new Set();
 
   state.words.forEach((word) => {
-    const stats = wordStats.get(word.id);
-    if (!stats) {
+    const progress = wordProgress.get(word.id);
+    if (!progress || progress.totalFormats === 0) {
+      return;
+    }
+    if (progress.attemptedFormats === 0) {
       newSet.add(word.id);
-    } else if (stats.mastered) {
-      masteredSet.add(word.id);
-    } else {
+    } else if (progress.pendingFormats > 0 || progress.freshFormats > 0) {
       unmasteredSet.add(word.id);
+    } else {
+      masteredSet.add(word.id);
     }
   });
 
   const selected = [];
+  const wordUsage = new Map();
   const newWordsIntroduced = new Set();
 
-  const takeFromSet = (wordSet, { isNew = false } = {}) => {
+  const tryAddCandidate = (
+    candidate,
+    { isNew = false, overrideLimit = false } = {}
+  ) => {
+    if (selected.length >= sessionLength) return false;
+    const wordId = candidate.word.id;
+    if (
+      isNew &&
+      !newWordsIntroduced.has(wordId) &&
+      newWordsIntroduced.size >= MAX_NEW_WORDS_PER_SESSION
+    ) {
+      return false;
+    }
+    if (!overrideLimit) {
+      const usage = wordUsage.get(wordId) ?? 0;
+      if (usage >= MAX_OCCURRENCES_PER_WORD) {
+        return false;
+      }
+    }
+    selected.push(createExercise(candidate.word, candidate.format));
+    wordUsage.set(wordId, (wordUsage.get(wordId) ?? 0) + 1);
+    if (isNew) {
+      newWordsIntroduced.add(wordId);
+    }
+    return true;
+  };
+
+  const takeFromSet = (
+    wordSet,
+    { isNew = false, overrideLimit = false } = {}
+  ) => {
     if (!wordSet || wordSet.size === 0) return;
-    const passes = isNew ? 1 : MAX_REPEAT_PASSES;
+    const passes = overrideLimit ? 1 : isNew ? 1 : MAX_REPEAT_PASSES;
     for (let pass = 0; pass < passes; pass += 1) {
-      const beforeCount = selected.length;
+      let addedThisPass = false;
       for (const candidate of sortedExercises) {
         if (selected.length >= sessionLength) break;
         if (!wordSet.has(candidate.word.id)) continue;
-        if (
-          isNew &&
-          !newWordsIntroduced.has(candidate.word.id) &&
-          newWordsIntroduced.size >= MAX_NEW_WORDS_PER_SESSION
-        ) {
-          continue;
-        }
-        selected.push(createExercise(candidate.word, candidate.format));
-        if (isNew) {
-          newWordsIntroduced.add(candidate.word.id);
+        if (tryAddCandidate(candidate, { isNew, overrideLimit })) {
+          addedThisPass = true;
         }
       }
-      if (selected.length >= sessionLength || selected.length === beforeCount) {
+      if (selected.length >= sessionLength || !addedThisPass) {
         break;
       }
     }
@@ -447,10 +488,20 @@ function buildSessionQueue() {
     }
   }
 
+  if (selected.length < sessionLength) {
+    takeFromSet(unmasteredSet, { overrideLimit: true });
+    if (selected.length < sessionLength) {
+      takeFromSet(newSet, { isNew: true, overrideLimit: true });
+    }
+    if (selected.length < sessionLength) {
+      takeFromSet(masteredSet, { overrideLimit: true });
+    }
+  }
+
   if (selected.length === 0) {
     for (const candidate of sortedExercises) {
       if (selected.length >= sessionLength) break;
-      selected.push(createExercise(candidate.word, candidate.format));
+      tryAddCandidate(candidate, { overrideLimit: true });
     }
   }
 
@@ -1319,23 +1370,40 @@ function persistWordOptionFloor() {
   localStorage.setItem(WORD_OPTION_FLOOR_KEY, JSON.stringify(payload));
 }
 
-function buildWordStatsMap() {
+function buildWordProgressMap() {
   const map = new Map();
-  for (const [key, stats] of state.performanceMap.entries()) {
-    const [wordId] = key.split('::');
-    const entry =
-      map.get(wordId) ?? { attempts: 0, correct: 0, accuracy: 0, mastered: false };
-    entry.attempts += stats.attempts || 0;
-    entry.correct += stats.correct || 0;
-    map.set(wordId, entry);
-  }
-  for (const entry of map.values()) {
-    entry.accuracy =
-      entry.attempts === 0 ? 0 : entry.correct / entry.attempts;
-    entry.mastered =
-      entry.attempts >= MASTERY_MIN_ATTEMPTS &&
-      entry.accuracy >= MASTERY_ACCURACY_THRESHOLD;
-  }
+  state.words.forEach((word) => {
+    map.set(word.id, {
+      totalFormats: 0,
+      attemptedFormats: 0,
+      pendingFormats: 0,
+      masteredFormats: 0,
+      freshFormats: 0,
+    });
+  });
+
+  state.words.forEach((word) => {
+    const entry = map.get(word.id);
+    state.formats.forEach((format) => {
+      if (!wordSupportsFormat(word, format)) {
+        return;
+      }
+      entry.totalFormats += 1;
+      const key = buildPerformanceKey(word.id, format.id);
+      const stats = state.performanceMap.get(key);
+      if (!stats || !stats.attempts) {
+        entry.freshFormats += 1;
+        return;
+      }
+      entry.attemptedFormats += 1;
+      if (isTupleMastered(stats)) {
+        entry.masteredFormats += 1;
+      } else {
+        entry.pendingFormats += 1;
+      }
+    });
+  });
+
   return map;
 }
 
@@ -1352,4 +1420,143 @@ function logPlannedExercises(exercises) {
     );
   });
   console.groupEnd();
+}
+
+function isTupleMastered(stats) {
+  if (!stats) return false;
+  if (stats.attempts < MASTERY_MIN_ATTEMPTS) return false;
+  const accuracy = stats.attempts === 0 ? 0 : stats.correct / stats.attempts;
+  return accuracy >= MASTERY_ACCURACY_THRESHOLD;
+}
+
+function showControlPanel() {
+  renderControlPanel();
+  dom.controlPanel.classList.remove('hidden');
+}
+
+function hideControlPanel() {
+  dom.controlPanel.classList.add('hidden');
+}
+
+function renderControlPanel() {
+  if (!dom.controlPanelBody) return;
+  const data = buildControlPanelData();
+  if (data.length === 0) {
+    dom.controlPanelBody.innerHTML =
+      '<p class="control-word-summary">Add words with assets to view progress.</p>';
+    return;
+  }
+  dom.controlPanelBody.innerHTML = '';
+  data.forEach((wordEntry) => {
+    const section = document.createElement('section');
+    section.className = 'control-word-section';
+
+    const heading = document.createElement('h3');
+    heading.textContent = `${wordEntry.word.english} (${wordEntry.word.id})`;
+    section.appendChild(heading);
+
+    const summary = document.createElement('p');
+    summary.className = 'control-word-summary';
+    summary.textContent = `Mastered formats: ${wordEntry.masteredFormats}/${wordEntry.totalFormats} • Pending: ${wordEntry.pendingFormats} • New: ${wordEntry.freshFormats}`;
+    section.appendChild(summary);
+
+    const table = document.createElement('table');
+    table.className = 'control-word-table';
+    const headerRow = document.createElement('tr');
+    headerRow.innerHTML = `
+      <th>Format</th>
+      <th>Status</th>
+      <th>Attempts</th>
+      <th>Accuracy</th>
+      <th>Option Level</th>
+      <th>Recent</th>
+    `;
+    table.appendChild(headerRow);
+
+    wordEntry.formats.forEach((formatEntry) => {
+      const row = document.createElement('tr');
+      const statusClass =
+        formatEntry.status === 'Mastered'
+          ? 'status-mastered'
+          : formatEntry.status === 'Learning'
+          ? 'status-learning'
+          : 'status-new';
+      row.innerHTML = `
+        <td>${formatEntry.label}</td>
+        <td><span class="control-status-pill ${statusClass}">${formatEntry.status}</span></td>
+        <td>${formatEntry.attempts}</td>
+        <td>${formatEntry.accuracy}%</td>
+        <td>${formatEntry.optionLevel}</td>
+        <td>${formatEntry.recent}</td>
+      `;
+      table.appendChild(row);
+    });
+
+    section.appendChild(table);
+    dom.controlPanelBody.appendChild(section);
+  });
+}
+
+function buildControlPanelData() {
+  const progressMap = buildWordProgressMap();
+  const entries = [];
+  state.words.forEach((word) => {
+    const formats = [];
+    state.formats.forEach((format) => {
+      if (!wordSupportsFormat(word, format)) return;
+      const key = buildPerformanceKey(word.id, format.id);
+      const stats = state.performanceMap.get(key);
+      const status = !stats || !stats.attempts
+        ? 'New'
+        : isTupleMastered(stats)
+        ? 'Mastered'
+        : 'Learning';
+      const accuracy =
+        stats && stats.attempts
+          ? Math.round((stats.correct / stats.attempts) * 100)
+          : 0;
+      const optionLevel = getOptionCountForTuple(word.id, format.id);
+      const recent = getRecentAttemptSummary(word.id, format.id);
+      formats.push({
+        formatId: format.id,
+        label: `${FORMAT_LABELS[format.promptType]} → ${FORMAT_LABELS[format.answerType]}`,
+        status,
+        attempts: stats?.attempts ?? 0,
+        accuracy,
+        optionLevel,
+        recent,
+      });
+    });
+    if (formats.length === 0) return;
+    const progress = progressMap.get(word.id) ?? {
+      totalFormats: formats.length,
+      masteredFormats: 0,
+      pendingFormats: 0,
+      freshFormats: formats.length,
+    };
+    entries.push({
+      word,
+      totalFormats: progress.totalFormats,
+      masteredFormats: progress.masteredFormats,
+      pendingFormats: progress.pendingFormats,
+      freshFormats: progress.freshFormats,
+      formats,
+    });
+  });
+  return entries;
+}
+
+function getRecentAttemptSummary(wordId, formatId, limit = 5) {
+  const recent = [];
+  for (let i = state.history.length - 1; i >= 0; i -= 1) {
+    const entry = state.history[i];
+    if (entry.wordId === wordId && entry.formatId === formatId) {
+      recent.push(entry.result === 'correct' ? '✔︎' : '✗');
+    }
+    if (recent.length >= limit) break;
+  }
+  if (recent.length === 0) {
+    return '—';
+  }
+  return recent.reverse().join(' ');
 }
