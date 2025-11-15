@@ -1,0 +1,237 @@
+.transition-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--blank-bg);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition-speed) ease;
+  z-index: 40;
+}
+
+.transition-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.control-panel {
+  position: fixed;
+  inset: 0;
+  background: rgba(44, 62, 80, 0.55);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 80;
+}
+
+.control-panel-content {
+  width: min(960px, 100%);
+  max-height: 90vh;
+  background: #ffffff;
+  border-radius: 28px;
+  padding: 24px;
+  box-shadow: 0 40px 80px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: hidden;
+}
+
+.control-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.control-panel-body {
+  overflow-y: auto;
+  padding-right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.control-word-section {
+  border: 1px solid rgba(142, 68, 173, 0.2);
+  border-radius: 18px;
+  padding: 16px;
+  background: #faf6ff;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.control-word-section h3 {
+  margin: 0;
+  color: var(--primary-purple-dark);
+  font-size: 1.3rem;
+}
+
+.control-word-summary {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+}
+
+.control-word-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.control-word-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.control-word-table th,
+.control-word-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(142, 68, 173, 0.2);
+  text-align: left;
+}
+
+.control-status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.status-new {
+  background: rgba(52, 152, 219, 0.15);
+  color: #1f618d;
+}
+
+.status-learning {
+  background: rgba(243, 156, 18, 0.18);
+  color: #af601a;
+}
+
+.status-mastered {
+  background: rgba(39, 174, 96, 0.2);
+  color: #1d6f42;
+}
+
+.balloon-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  overflow: hidden;
+}
+
+.balloon-container {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.balloon {
+  position: absolute;
+  bottom: -140px;
+  left: var(--balloon-left, 50%);
+  transform: translateX(-50%) scale(var(--balloon-scale, 1));
+  width: 60px;
+  height: 80px;
+  border-radius: 50% 50% 45% 45%;
+  background: var(--balloon-color, #ffd54f);
+  border: none;
+  box-shadow: 0 12px 18px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  pointer-events: auto;
+  animation: floatUp var(--balloon-duration, 7s)
+      cubic-bezier(0.35, 0, 0.25, 1)
+      var(--balloon-delay, 0s)
+      infinite;
+}
+
+.balloon::after {
+  content: '';
+  position: absolute;
+  bottom: -18px;
+  left: 50%;
+  width: 2px;
+  height: 22px;
+  background: rgba(0, 0, 0, 0.12);
+  transform: translateX(-50%);
+}
+
+.balloon--popped {
+  animation: popBalloon 0.35s ease forwards;
+}
+
+@keyframes floatUp {
+  0% {
+    transform: translate(-50%, 0) scale(var(--balloon-scale, 1));
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  50% {
+    transform: translate(-40%, -50vh)
+      scale(calc(var(--balloon-scale, 1) * 1.05));
+  }
+  100% {
+    transform: translate(-60%, -110vh) scale(var(--balloon-scale, 1));
+    opacity: 0;
+  }
+}
+
+@keyframes popBalloon {
+  0% {
+    transform: translate(-50%, 0) scale(var(--balloon-scale, 1));
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -10px) scale(0.2);
+    opacity: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  #app {
+    padding: 16px;
+  }
+
+  .app-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .prompt-area {
+    min-height: 120px;
+    font-size: clamp(2rem, 7vw, 2.6rem);
+  }
+
+  .options-grid {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  }
+
+  .option-button {
+    min-height: 90px;
+  }
+
+  .control-panel-content {
+    padding: 16px;
+  }
+
+  .control-word-table {
+    font-size: 0.85rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .options-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .summary-actions {
+    justify-content: center;
+  }
+}
