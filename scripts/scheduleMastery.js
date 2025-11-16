@@ -1,12 +1,15 @@
-import { state } from './state.js';
 import { clamp } from './utils.js';
 
 const REVIEW_STORAGE_KEY = 'emiliaEnglishMasterySchedule';
 
-const REVIEW_INTERVALS = [0, 1, 3, 7, 14]; // days
+// Days between reviews; grows exponentially for mastered tuples.
+const REVIEW_INTERVALS = [0, 1, 3, 7, 14];
 
 const reviewSchedule = new Map();
 
+/**
+ * Load the spaced-repetition review schedule from storage.
+ */
 export function loadReviewSchedule() {
   const stored = localStorage.getItem(REVIEW_STORAGE_KEY);
   if (!stored) return;
@@ -23,6 +26,9 @@ export function loadReviewSchedule() {
   }
 }
 
+/**
+ * Persist the current review schedule.
+ */
 export function persistReviewSchedule() {
   const payload = {};
   reviewSchedule.forEach((value, key) => {
@@ -31,6 +37,9 @@ export function persistReviewSchedule() {
   localStorage.setItem(REVIEW_STORAGE_KEY, JSON.stringify(payload));
 }
 
+/**
+ * Update the review interval for a tuple each time it’s answered.
+ */
 export function scheduleMasteryReview(wordId, formatId, mastered) {
   const key = `${wordId}::${formatId}`;
   const entry = reviewSchedule.get(key) ?? {
@@ -50,6 +59,9 @@ export function scheduleMasteryReview(wordId, formatId, mastered) {
   persistReviewSchedule();
 }
 
+/**
+ * Determine whether a mastered tuple is due for resurfacing.
+ */
 export function shouldScheduleMastered(wordId, formatId) {
   const key = `${wordId}::${formatId}`;
   const entry = reviewSchedule.get(key);

@@ -9,15 +9,24 @@ import {
 } from './progress.js';
 import { FORMAT_LABELS } from './config.js';
 
+/**
+ * Display the progress panel overlay and re-render its contents.
+ */
 export function openControlPanel() {
   renderControlPanel();
   dom.controlPanel?.classList.remove('hidden');
 }
 
+/**
+ * Hide the progress panel overlay.
+ */
 export function hideControlPanel() {
   dom.controlPanel?.classList.add('hidden');
 }
 
+/**
+ * Render the full list of words + format details inside the panel.
+ */
 function renderControlPanel() {
   if (!dom.controlPanelBody) return;
   const data = buildControlPanelData();
@@ -101,6 +110,9 @@ function renderControlPanel() {
   });
 }
 
+/**
+ * Build the data structure consumed by the panel renderer.
+ */
 function buildControlPanelData() {
   const progressMap = buildWordProgressMap();
   const entries = [];
@@ -149,6 +161,9 @@ function buildControlPanelData() {
   return entries;
 }
 
+/**
+ * Return a concise string (e.g., ✔︎ ✗ ✔︎) representing the last few attempts.
+ */
 function getRecentAttemptSummary(wordId, formatId, limit = 5) {
   const recent = [];
   for (let i = state.history.length - 1; i >= 0; i -= 1) {

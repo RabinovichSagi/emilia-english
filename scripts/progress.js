@@ -1,8 +1,11 @@
-import { MASTERy_RULES } from './config.js';
+import { MASTERy_RULES, STORAGE_KEYS } from './config.js';
 import { clamp } from './utils.js';
 import { state } from './state.js';
 import { scheduleMasteryReview } from './scheduleMastery.js';
 
+/**
+ * Factory for the session stats object used by the summary screen.
+ */
 export function createEmptySessionStats() {
   return {
     total: 0,
@@ -12,6 +15,9 @@ export function createEmptySessionStats() {
   };
 }
 
+/**
+ * Update per-session summary statistics with a single attempt.
+ */
 export function updateSessionStats(entry) {
   if (!state.sessionStats) return;
   state.sessionStats.total += 1;
@@ -37,6 +43,9 @@ export function updateSessionStats(entry) {
   state.sessionStats.formatBreakdown.set(key, breakdownEntry);
 }
 
+/**
+ * Aggregate attempt history into per-tuple performance stats.
+ */
 export function buildPerformanceMap(historyEntries) {
   const map = new Map();
   historyEntries.forEach((entry) => {
@@ -65,6 +74,9 @@ export function buildPerformanceMap(historyEntries) {
   return map;
 }
 
+/**
+ * Incrementally update the performance map after recording an attempt.
+ */
 export function updatePerformanceMapWithEntry(entry) {
   const key = buildPerformanceKey(entry.wordId, entry.formatId);
   const existing =
@@ -89,6 +101,9 @@ export function updatePerformanceMapWithEntry(entry) {
   scheduleMasteryReview(entry.wordId, entry.formatId, isTupleMastered(existing));
 }
 
+/**
+ * Update the adaptive option-level state for a tuple after an attempt.
+ */
 export function updateOptionStateWithEntry(entry) {
   if (!entry.wordId || !entry.formatId) return;
   const key = buildPerformanceKey(entry.wordId, entry.formatId);
@@ -100,6 +115,9 @@ export function updateOptionStateWithEntry(entry) {
   applyOptionStateTransition(optionState, entry.result === 'correct');
 }
 
+/**
+ * Summarize per-word mastery progress (pending/new/mastered counts).
+ */
 export function buildWordProgressMap() {
   const map = new Map();
   state.words.forEach((word) => {
@@ -137,10 +155,16 @@ export function buildWordProgressMap() {
   return map;
 }
 
+/**
+ * Convenience for generating a consistent tuple key.
+ */
 export function buildPerformanceKey(wordId, formatId) {
   return `${wordId}::${formatId}`;
 }
 
+/**
+ * Determine how many options to show for a tuple, respecting floor + adaptive level.
+ */
 export function getOptionCountForTuple(wordId, formatId) {
   const key = buildPerformanceKey(wordId, formatId);
   const entry = state.optionStateMap.get(key);
@@ -149,6 +173,9 @@ export function getOptionCountForTuple(wordId, formatId) {
   return clamp(Math.max(baseLevel, floor), 1, 4);
 }
 
+/**
+ * Base option-state object for unseen tuples.
+ */
 export function createDefaultOptionState() {
   return {
     level: 1,
@@ -157,6 +184,9 @@ export function createDefaultOptionState() {
   };
 }
 
+/**
+ * Adjust the option-state level based on consecutive successes/failures.
+ */
 export function applyOptionStateTransition(optionState, wasCorrect) {
   if (wasCorrect) {
     optionState.failureRun = 0;
@@ -186,6 +216,9 @@ export function applyOptionStateTransition(optionState, wasCorrect) {
   optionState.level = clamp(optionState.level, 1, 4);
 }
 
+/**
+ * Determine whether a tuple is considered mastered using recency-weighted accuracy.
+ */
 export function isTupleMastered(stats) {
   if (!stats) return false;
   const recent = stats.recent ?? [];
@@ -201,6 +234,9 @@ export function isTupleMastered(stats) {
   );
 }
 
+/**
+ * Check if a word has the required assets for a given format.
+ */
 export function wordSupportsFormat(word, format) {
   if (format.requires.translation && !word.hebrew) return false;
   if (format.requires.image && !word.image) return false;
@@ -222,6 +258,21 @@ function updateRecentResults(recent = [], result) {
   return copy;
 }
 
+function persistHistorySnapshot() {
+  localStorage.setItem(
+    STORAGE_KEYS.HISTORY,
+    JSON.stringify(state.history ?? [])
+  );
+}
+
+function persistWordOptionFloorSnapshot() {
+  const payload = Object.fromEntries(state.wordOptionFloor ?? new Map());
+  localStorage.setItem(STORAGE_KEYS.WORD_OPTION_FLOOR, JSON.stringify(payload));
+}
+
+/**
+ * Force all tuples for a word into the mastered state and raise its option floor.
+ */
 export function markWordAsMastered(wordId) {
   state.formats.forEach((format) => {
     const key = buildPerformanceKey(wordId, format.id);
@@ -244,12 +295,15 @@ export function markWordAsMastered(wordId) {
     );
   });
   state.wordOptionFloor.set(wordId, 4);
-  persistWordOptionFloor();
+  persistWordOptionFloorSnapshot();
 }
 
+/**
+ * Wipe history/state for a word so it re-enters the queue as brand new.
+ */
 export function resetWordProgress(wordId) {
   state.history = state.history.filter((entry) => entry.wordId !== wordId);
-  persistHistory();
+  persistHistorySnapshot();
 
   state.formats.forEach((format) => {
     const key = buildPerformanceKey(wordId, format.id);
@@ -257,5 +311,5 @@ export function resetWordProgress(wordId) {
     state.optionStateMap.delete(key);
   });
   state.wordOptionFloor.set(wordId, 1);
-  persistWordOptionFloor();
+  persistWordOptionFloorSnapshot();
 }

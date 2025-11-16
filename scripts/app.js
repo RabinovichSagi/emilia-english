@@ -40,6 +40,9 @@ import {
 
 document.addEventListener('DOMContentLoaded', init);
 
+/**
+ * Entry point: load persisted data, fetch words, bootstrap UI.
+ */
 async function init() {
   initBalloonCelebration();
   cacheDomReferences();
@@ -66,6 +69,9 @@ async function init() {
   dom.sessionLengthDisplay.textContent = state.sessionLength.toString();
 }
 
+/**
+ * Gather all DOM nodes the app mutates frequently.
+ */
 function cacheDomReferences() {
   dom.startScreen = document.getElementById('start-screen');
   dom.sessionScreen = document.getElementById('session-screen');
@@ -92,6 +98,9 @@ function cacheDomReferences() {
   dom.endSessionButton = document.getElementById('end-session-button');
 }
 
+/**
+ * Wire up button handlers, slider, and overlay interactions.
+ */
 function attachEventListeners() {
   dom.startButton.addEventListener('click', handleStartSession);
   dom.restartButton.addEventListener('click', handleRestart);
@@ -114,6 +123,9 @@ function attachEventListeners() {
   });
 }
 
+/**
+ * Apply the previously saved session length, clamped to valid bounds.
+ */
 function applyStoredSettings() {
   const stored = loadSessionLength();
   if (stored) {
@@ -128,6 +140,9 @@ function applyStoredSettings() {
   }
 }
 
+/**
+ * Initialize a new practice session and render the first card.
+ */
 function handleStartSession() {
   if (state.words.length === 0) {
     alert('Word list is empty. Please add entries to data/words.json.');
@@ -146,6 +161,9 @@ function handleStartSession() {
   renderNextExercise(true);
 }
 
+/**
+ * Abort the current session and jump to the summary screen.
+ */
 function endSessionEarly() {
   if (!state.currentExercise) {
     return;
@@ -154,6 +172,9 @@ function endSessionEarly() {
   showSessionSummary();
 }
 
+/**
+ * Restart a new session from the summary screen.
+ */
 function handleRestart() {
   state.sessionStats = createEmptySessionStats();
   state.queue = buildSessionQueue();
@@ -168,16 +189,25 @@ function handleRestart() {
   renderNextExercise(true);
 }
 
+/**
+ * Return to the home screen from the summary.
+ */
 function returnHome() {
   switchScreen(dom.summaryScreen, dom.startScreen);
   hideControlPanel();
 }
 
+/**
+ * Utility: toggle which main screen is visible.
+ */
 function switchScreen(from, to) {
   from.classList.add('hidden');
   to.classList.remove('hidden');
 }
 
+/**
+ * Pop the next exercise from the queue and show it (with fade transitions).
+ */
 function renderNextExercise(skipTransition = false) {
   if (state.queue.length === 0) {
     showSessionSummary();
@@ -207,6 +237,9 @@ function renderNextExercise(skipTransition = false) {
   }
 }
 
+/**
+ * Render the stimulus/prompt portion of the exercise card.
+ */
 function renderPrompt(word, format) {
   dom.promptArea.innerHTML = '';
   dom.promptArea.style.fontSize = '';
@@ -271,6 +304,9 @@ function renderPrompt(word, format) {
   dom.promptArea.textContent = word.english;
 }
 
+/**
+ * Render the answer options (buttons/images/audio/letters) for a card.
+ */
 function renderOptions(exercise) {
   dom.optionsArea.innerHTML = '';
 
@@ -314,6 +350,9 @@ function renderOptions(exercise) {
   });
 }
 
+/**
+ * Primary tap handler for option buttons, including audio previews.
+ */
 function handleAnswerSelection(exercise, option, event) {
   if (!state.currentExercise || state.transitionInProgress) {
     return;
@@ -362,6 +401,9 @@ function handleAnswerSelection(exercise, option, event) {
   }
 }
 
+/**
+ * Handle incorrect answers: hints, retries, or requeueing.
+ */
 function handleIncorrectAttempt(exercise, option) {
   if (exercise.attempts >= 2 && !exercise.hintUsed) {
     exercise.hintUsed = true;
@@ -375,6 +417,9 @@ function handleIncorrectAttempt(exercise, option) {
   }
 }
 
+/**
+ * Provide a gentle hint (replay audio or pulse correct option).
+ */
 function triggerHint(exercise) {
   const format = exercise.format;
   if (format.promptType === 'audio') {
@@ -390,6 +435,9 @@ function triggerHint(exercise) {
   }
 }
 
+/**
+ * Visually reveal the correct option after exhausting attempts.
+ */
 function revealCorrectOption(exercise) {
   dom.feedbackArea.textContent = 'Here is the correct answer!';
   const correctButton = [...dom.optionsArea.children].find(
@@ -404,6 +452,9 @@ function revealCorrectOption(exercise) {
   incorrectButtons.forEach((btn) => btn.classList.add('option-incorrect'));
 }
 
+/**
+ * Insert a missed exercise back into the queue a couple cards ahead.
+ */
 function queueExerciseRetry(exercise) {
   const retryExercise = {
     ...exercise,
@@ -416,6 +467,9 @@ function queueExerciseRetry(exercise) {
   state.queue.splice(insertIndex, 0, retryExercise);
 }
 
+/**
+ * Advance to the next card after a short delay, tracking progress counts.
+ */
 function scheduleNextExercise(exercise) {
   if (exercise && !exercise.isRetry) {
     state.completedBaseExercises = Math.min(
@@ -427,6 +481,9 @@ function scheduleNextExercise(exercise) {
   setTimeout(() => renderNextExercise(), 900);
 }
 
+/**
+ * Highlight the tapped option in green/red based on correctness.
+ */
 function highlightOption(optionId, isCorrect) {
   [...dom.optionsArea.children].forEach((button) => {
     if (button.dataset.optionId === optionId) {
@@ -435,12 +492,18 @@ function highlightOption(optionId, isCorrect) {
   });
 }
 
+/**
+ * Disable all option buttons (used post-selection).
+ */
 function disableOptions() {
   [...dom.optionsArea.children].forEach((button) => {
     button.disabled = true;
   });
 }
 
+/**
+ * Enable all options except the one that was just tapped.
+ */
 function enableOptionsExcept(optionId) {
   [...dom.optionsArea.children].forEach((button) => {
     if (button.dataset.optionId === optionId) {
@@ -452,6 +515,9 @@ function enableOptionsExcept(optionId) {
   });
 }
 
+/**
+ * Persist a single attempt and update all derived state maps.
+ */
 function recordAttempt({
   wordId,
   format,
@@ -479,12 +545,18 @@ function recordAttempt({
   updateOptionStateWithEntry(entry);
 }
 
+/**
+ * Update the progress text (e.g., “3 / 10”) based on completed cards.
+ */
 function updateProgressIndicator() {
   const total = state.sessionPlanLength || state.sessionLength;
   const completed = Math.min(state.completedBaseExercises, total);
   dom.progressIndicator.textContent = `${completed} / ${total}`;
 }
 
+/**
+ * Animate fade-out, blank pause, and fade-in between exercises.
+ */
 function runTransition(renderCallback) {
   if (state.transitionInProgress) return;
   state.transitionInProgress = true;
@@ -511,6 +583,9 @@ function runTransition(renderCallback) {
   }, SESSION_LIMITS.CARD_FADE_DURATION);
 }
 
+/**
+ * Display the summary screen with accuracy and weakest tuples.
+ */
 function showSessionSummary() {
   state.currentExercise = null;
   if (!state.sessionStats) {
@@ -588,6 +663,9 @@ function showSessionSummary() {
   scheduleBalloonTimeout();
 }
 
+/**
+ * Download the full history as prettified JSON.
+ */
 function exportProgressLog() {
   const blob = new Blob([JSON.stringify(state.history, null, 2)], {
     type: 'application/json',
@@ -604,6 +682,9 @@ function exportProgressLog() {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+/**
+ * Log the planned session queue to the console for debugging.
+ */
 function logPlannedExercises(exercises) {
   if (!Array.isArray(exercises) || exercises.length === 0) {
     console.info('[Session Plan] No exercises queued.');
@@ -619,11 +700,17 @@ function logPlannedExercises(exercises) {
   console.groupEnd();
 }
 
+/**
+ * Promote a word’s minimum option level once it has seen a single-option card.
+ */
 function handleSingleOptionPromotion(exercise) {
   if (!exercise || exercise.optionCount > 1) return;
   promoteWordFloor(exercise.word.id, 2);
 }
 
+/**
+ * Increase a word’s option-floor (persisted) so it never drops below minLevel.
+ */
 function promoteWordFloor(wordId, minLevel) {
   const current = state.wordOptionFloor.get(wordId) ?? 1;
   if (current >= minLevel) return;
@@ -631,6 +718,9 @@ function promoteWordFloor(wordId, minLevel) {
   persistWordOptionFloor();
 }
 
+/**
+ * Auto-hide the celebration balloons after a few seconds.
+ */
 function scheduleBalloonTimeout() {
   clearBalloonTimeout();
   state.balloonTimeoutId = window.setTimeout(() => {
@@ -639,6 +729,9 @@ function scheduleBalloonTimeout() {
   }, 5000);
 }
 
+/**
+ * Clear any outstanding balloon timeout.
+ */
 function clearBalloonTimeout() {
   if (state.balloonTimeoutId) {
     clearTimeout(state.balloonTimeoutId);

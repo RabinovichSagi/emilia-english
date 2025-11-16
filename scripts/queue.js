@@ -2,6 +2,7 @@ import {
   SESSION_LIMITS,
   EXERCISE_FORMATS,
   LETTER_ALPHABET,
+  DEPRECATED_FORMAT_IDS,
 } from './config.js';
 import { clamp, shuffle } from './utils.js';
 import { state } from './state.js';
@@ -14,6 +15,9 @@ import {
 import { shouldScheduleMastered } from './scheduleMastery.js';
 import { normalizeLetter, getAvailableLetters } from './letters.js';
 
+/**
+ * Determine which exercise formats are supported by the current word set.
+ */
 export function computeAvailableFormats(words) {
   const wordCapabilities = new Map();
   words.forEach((word) => {
@@ -27,21 +31,27 @@ export function computeAvailableFormats(words) {
     });
   });
 
-  return EXERCISE_FORMATS.filter((format) =>
-    words.some((word) => {
-      const caps = wordCapabilities.get(word.id);
-      return Object.entries(format.requires).every(
-        ([key, needed]) => !needed || caps?.[key]
-      );
-    })
+  return EXERCISE_FORMATS.filter(
+    (format) =>
+      !DEPRECATED_FORMAT_IDS.has(format.id) &&
+      words.some((word) => {
+        const caps = wordCapabilities.get(word.id);
+        return Object.entries(format.requires).every(
+          ([key, needed]) => !needed || caps?.[key]
+        );
+      })
   );
 }
 
+/**
+ * Build the prioritized exercise queue, balancing new/unmastered/mastered words.
+ */
 export function buildSessionQueue() {
   const allExercises = [];
 
   state.words.forEach((word) => {
     state.formats.forEach((format) => {
+      if (DEPRECATED_FORMAT_IDS.has(format.id)) return;
       if (!wordSupportsFormat(word, format)) {
         return;
       }
@@ -91,15 +101,24 @@ export function buildSessionQueue() {
     if (!progress || progress.totalFormats === 0) {
       return;
     }
+    let dueMastered = 0;
+    state.formats.forEach((format) => {
+      if (DEPRECATED_FORMAT_IDS.has(format.id)) return;
+      if (!wordSupportsFormat(word, format)) return;
+      const key = `${word.id}::${format.id}`;
+      const stats = state.performanceMap.get(key);
+      if (stats && isTupleMastered(stats) && shouldScheduleMastered(word.id, format.id)) {
+        dueMastered += 1;
+      }
+    });
     if (progress.attemptedFormats === 0) {
       newSet.add(word.id);
     } else if (progress.pendingFormats > 0 || progress.freshFormats > 0) {
-      const shouldIncludeMastered = progress.masteredFormats > 0 && shouldScheduleMastered(word.id, state.formats[0].id);
-      if (shouldIncludeMastered) {
+      unmasteredSet.add(word.id);
+      if (dueMastered > 0) {
         masteredSet.add(word.id);
       }
-      unmasteredSet.add(word.id);
-    } else {
+    } else if (dueMastered > 0) {
       masteredSet.add(word.id);
     }
   });
@@ -108,6 +127,9 @@ export function buildSessionQueue() {
   const wordUsage = new Map();
   const newWordsIntroduced = new Set();
 
+  /**
+   * Attempt to add the candidate exercise, respecting new-word limits and per-word usage caps.
+   */
   const tryAddCandidate = (
     candidate,
     { isNew = false, overrideLimit = false } = {}
@@ -133,6 +155,9 @@ export function buildSessionQueue() {
     return true;
   };
 
+  /**
+   * Pull exercises whose word id is within wordSet into the queue.
+   */
   const takeFromSet = (
     wordSet,
     { isNew = false, overrideLimit = false } = {}
@@ -191,6 +216,9 @@ export function buildSessionQueue() {
   return selected.slice(0, sessionLength);
 }
 
+/**
+ * Create an exercise object with options precomputed for the given tuple.
+ */
 export function createExercise(word, format) {
   const optionCount = getOptionCountForTuple(word.id, format.id);
   const options = buildOptions(word, format, optionCount);
@@ -207,6 +235,9 @@ export function createExercise(word, format) {
   };
 }
 
+/**
+ * Build the selectable options for a given word/format combination.
+ */
 export function buildOptions(word, format, optionCount) {
   if (format.answerType === 'letter') {
     return buildLetterOptions(word, optionCount);
@@ -225,6 +256,9 @@ export function buildOptions(word, format, optionCount) {
   return shuffle(options);
 }
 
+/**
+ * Specialized option builder for letter drills (ensures enough distractors).
+ */
 export function buildLetterOptions(word, optionCount) {
   const targetLetter = normalizeLetter(word.initialLetter);
   if (!targetLetter) {
@@ -274,6 +308,9 @@ export function buildLetterOptions(word, optionCount) {
   }));
 }
 
+/**
+ * Pick N distractor word IDs respecting modality requirements.
+ */
 export function pickDistractorIds(word, format, desiredCount = 3) {
   if (desiredCount <= 0) {
     return [];
@@ -322,6 +359,9 @@ export function pickDistractorIds(word, format, desiredCount = 3) {
   return result.slice(0, desiredCount);
 }
 
+/**
+ * Convert a word into the option payload needed to render a button/card.
+ */
 export function transformWordToOption(word, format, isCorrect) {
   let label = word.english;
   let imageSrc = null;
@@ -346,6 +386,9 @@ export function transformWordToOption(word, format, isCorrect) {
   };
 }
 
+/**
+ * Determine whether the word can serve as an answer for the target format.
+ */
 function wordSupportsAnswer(word, format) {
   if (format.answerType === 'translation') return Boolean(word.hebrew);
   if (format.answerType === 'image') return Boolean(word.image);

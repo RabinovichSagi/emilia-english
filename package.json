@@ -1,0 +1,21 @@
+{
+  "name": "emilia-english",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RabinovichSagi/emilia-english.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/RabinovichSagi/emilia-english/issues"
+  },
+  "homepage": "https://github.com/RabinovichSagi/emilia-english#readme"
+}

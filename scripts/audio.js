@@ -1,6 +1,9 @@
 import { AUDIO_SETTINGS } from './config.js';
 import { state } from './state.js';
 
+/**
+ * Play the provided audio source, ensuring any previously playing prompt stops.
+ */
 export function playAudio(src) {
   stopCurrentAudio();
   const audio = new Audio(src);
@@ -10,6 +13,9 @@ export function playAudio(src) {
   });
 }
 
+/**
+ * Stop and clear the currently playing audio prompt (if any).
+ */
 export function stopCurrentAudio() {
   if (state.currentAudio) {
     state.currentAudio.pause();
@@ -17,6 +23,9 @@ export function stopCurrentAudio() {
   }
 }
 
+/**
+ * Schedule prompt audio with a short delay so it triggers after the card fades in.
+ */
 export function schedulePromptAudio(src, delay = 50) {
   clearPendingPromptAudio();
   state.pendingPromptAudio = window.setTimeout(() => {
@@ -25,6 +34,9 @@ export function schedulePromptAudio(src, delay = 50) {
   }, delay);
 }
 
+/**
+ * Cancel any queued prompt audio before rendering a new card.
+ */
 export function clearPendingPromptAudio() {
   if (state.pendingPromptAudio) {
     clearTimeout(state.pendingPromptAudio);
@@ -32,6 +44,9 @@ export function clearPendingPromptAudio() {
   }
 }
 
+/**
+ * Play the “correct” or “incorrect” feedback sound after an attempt.
+ */
 export function playFeedbackSound(isCorrect) {
   const src = isCorrect
     ? AUDIO_SETTINGS.CORRECT_SRC
