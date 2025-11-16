@@ -213,6 +213,15 @@ export function wordSupportsFormat(word, format) {
   return true;
 }
 
+function updateRecentResults(recent = [], result) {
+  const copy = Array.isArray(recent) ? [...recent] : [];
+  copy.push(result);
+  if (copy.length > MASTERy_RULES.RECENCY_WINDOW) {
+    copy.shift();
+  }
+  return copy;
+}
+
 export function markWordAsMastered(wordId) {
   state.formats.forEach((format) => {
     const key = buildPerformanceKey(wordId, format.id);
