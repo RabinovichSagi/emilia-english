@@ -1,4 +1,8 @@
-import { STORAGE_KEYS, DEPRECATED_FORMAT_IDS } from './config.js';
+import {
+  STORAGE_KEYS,
+  DEPRECATED_FORMAT_IDS,
+  LETTER_ALPHABET,
+} from './config.js';
 import { state } from './state.js';
 import {
   buildPerformanceMap,
@@ -109,12 +113,49 @@ export async function loadWords() {
   }
   const cleanString = (value) =>
     typeof value === 'string' ? value.trim() : '';
-  state.words = json.words.map((word) => ({
-    ...word,
-    english: cleanString(word.english),
-    hebrew: cleanString(word.hebrew),
-    image: cleanString(word.image),
-    audio: cleanString(word.audio),
-    initialLetter: cleanString(word.initialLetter),
-  }));
+  const normalizeLetter = (value) => {
+    if (typeof value !== 'string') return '';
+    const letter = value.trim().charAt(0).toLowerCase();
+    return LETTER_ALPHABET.includes(letter) ? letter : '';
+  };
+  const knownLetters = await loadKnownLetters();
+  const mappedWords = json.words.map((word) => {
+    const english = cleanString(word.english);
+    const fallbackLetter = normalizeLetter(english);
+    const explicitLetter = normalizeLetter(word.initialLetter);
+    return {
+      ...word,
+      english,
+      hebrew: cleanString(word.hebrew),
+      image: cleanString(word.image),
+      audio: cleanString(word.audio),
+      initialLetter: explicitLetter || fallbackLetter,
+    };
+  });
+  state.words =
+    knownLetters === null
+      ? mappedWords
+      : mappedWords.filter((word) => knownLetters.has(word.initialLetter));
+}
+
+async function loadKnownLetters() {
+  try {
+    const response = await fetch('data/known_letters.json');
+    if (!response.ok) {
+      return null;
+    }
+    const data = await response.json();
+    if (!data || !Array.isArray(data.letters)) {
+      return null;
+    }
+    const normalized = data.letters
+      .map((letter) =>
+        typeof letter === 'string' ? letter.trim().toLowerCase() : ''
+      )
+      .filter((letter) => LETTER_ALPHABET.includes(letter));
+    return new Set(normalized);
+  } catch (error) {
+    console.warn('Failed to load known letters list', error);
+    return null;
+  }
 }
