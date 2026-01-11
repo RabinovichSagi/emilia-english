@@ -248,6 +248,11 @@ function renderPrompt(word, format) {
   stopCurrentAudio();
   clearPendingPromptAudio();
 
+  const promptFallbackText =
+    format.promptType === 'translation'
+      ? word.hebrew || word.english
+      : word.english || word.hebrew;
+
   if (format.answerType === 'letter') {
     const answerInstruction = document.createElement('div');
     answerInstruction.className = 'letter-instruction';
@@ -272,21 +277,28 @@ function renderPrompt(word, format) {
   }
 
   if (format.promptType === 'text') {
-    dom.promptArea.textContent = word.english;
+    dom.promptArea.textContent = promptFallbackText || '';
     return;
   }
 
   if (format.promptType === 'translation') {
-    dom.promptArea.textContent = word.hebrew;
+    dom.promptArea.textContent = promptFallbackText || '';
     dom.promptArea.style.fontSize = 'clamp(2rem, 5vw, 3rem)';
     return;
   }
 
   if (format.promptType === 'image') {
-    const img = document.createElement('img');
-    img.src = word.image;
-    img.alt = word.english;
-    dom.promptArea.appendChild(img);
+    if (word.image) {
+      const img = document.createElement('img');
+      img.src = word.image;
+      img.alt = word.english;
+      img.addEventListener('error', () => {
+        dom.promptArea.textContent = promptFallbackText || '';
+      });
+      dom.promptArea.appendChild(img);
+    } else {
+      dom.promptArea.textContent = promptFallbackText || '';
+    }
     return;
   }
 
@@ -326,6 +338,9 @@ function renderOptions(exercise) {
       const img = document.createElement('img');
       img.src = option.imageSrc;
       img.alt = option.label;
+      img.addEventListener('error', () => {
+        img.remove();
+      });
       optionNode.appendChild(img);
       const label = document.createElement('span');
       label.textContent = option.label;

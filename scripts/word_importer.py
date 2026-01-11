@@ -54,7 +54,8 @@ DEFAULT_IMAGE_SIZE = (512, 512)
 IMAGE_OPTION_BOX_PX = 300
 PREVIEW_IMAGE_SIZE = (IMAGE_OPTION_BOX_PX, IMAGE_OPTION_BOX_PX)
 PIXABAY_RESULT_COUNT = 9
-LIBRE_TRANSLATE_URL = os.getenv("LIBRE_TRANSLATE_URL", "https://libretranslate.de/translate")
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1")
 
 VOICE_CHOICES: Dict[str, Dict[str, str]] = {
     "US English": {"lang": "en", "tld": "com"},
@@ -217,19 +218,22 @@ def perform_image_search(search_phrase: str) -> None:
 
 
 def translate_en_to_he(text: str) -> Optional[str]:
-    """Translate English text to Hebrew using LibreTranslate."""
+    """Translate English text to Hebrew using Ollama."""
     trimmed = text.strip()
     if not trimmed:
         return None
-    payload = {
-        "q": trimmed,
-        "source": "en",
-        "target": "he",
-        "format": "text",
-    }
-    headers = {"accept": "application/json"}
+    prompt = (
+        "you are expert translator. you will get a word and must respond with its translation. "
+        "Respont only with the hebrew tranlastion and only one.\n"
+        "# example:\n"
+        "input: teacher\n"
+        "output: מורה\n\n"
+        f"Translate this: {trimmed}"
+    )
+    payload = {"model": OLLAMA_MODEL, "prompt": prompt, "stream": False}
     try:
-        response = requests.post(LIBRE_TRANSLATE_URL, json=payload, headers=headers, timeout=10)
+        endpoint = f"{OLLAMA_URL.rstrip('/')}/api/generate"
+        response = requests.post(endpoint, json=payload, timeout=30)
         response.raise_for_status()
         data = response.json()
     except requests.RequestException as error:
@@ -239,7 +243,22 @@ def translate_en_to_he(text: str) -> Optional[str]:
         snippet = response.text[:200] if "response" in locals() else ""
         st.error(f"Translation failed: unexpected response '{snippet}'")
         return None
-    return data.get("translatedText")
+    translated = (data.get("response") or "").strip()
+    if not translated:
+        st.error("Translation failed: missing response from Ollama.")
+        return None
+    for line in translated.splitlines():
+        cleaned = line.strip()
+        if cleaned:
+            translated = cleaned
+            break
+    if translated.lower().startswith("output:"):
+        translated = translated.split(":", 1)[1].strip()
+    translated = translated.strip('"').strip("'")
+    if not translated:
+        st.error("Translation failed: empty response after cleanup.")
+        return None
+    return translated
 
 
 def synthesize_audio_bytes(text: str, lang: str, tld: str) -> bytes:
@@ -358,19 +377,38 @@ def main() -> None:
         translate_trigger = st.button(
             "Translate → Hebrew",
             disabled=not english_word.strip(),
-            help="Uses LibreTranslate to auto-fill the Hebrew field.",
+            help="Uses the local Ollama model to auto-fill the Hebrew field.",
         )
+    auto_fill_trigger = st.button(
+        "Auto-fill: translate + image + audio",
+        disabled=not english_word.strip(),
+        help="Runs translation, image search, and audio generation in one step.",
+    )
 
     if translate_trigger and english_word:
         translation = translate_en_to_he(english_word)
         if translation:
             st.session_state["hebrew_word_input"] = translation
+    if auto_fill_trigger and english_word:
+        translation = translate_en_to_he(english_word)
+        if translation:
+            st.session_state["hebrew_word_input"] = translation
+        st.session_state["image_search_text"] = english_word
+        st.session_state["last_english_for_image_search"] = english_word
+        st.session_state["pending_auto_image_search"] = True
+        st.session_state["tts_text_input"] = english_word
+        st.session_state["last_english_for_tts"] = english_word
+        st.session_state["pending_auto_audio"] = GTTS_AVAILABLE
+        if not PIXABAY_API_KEY:
+            st.warning("Set PIXABAY_API_KEY to enable image search.")
+        if not GTTS_AVAILABLE:
+            st.warning("Install gTTS (`pip install gTTS`) to enable audio generation.")
 
     detail_cols = st.columns([1.3, 1])
     with detail_cols[0]:
         hebrew_word = st.text_input(
             "Hebrew translation",
-            help="Auto-filled via LibreTranslate or provide your own.",
+            help="Auto-filled via the local Ollama model or provide your own.",
             key="hebrew_word_input",
         )
         tags_raw = st.text_input(

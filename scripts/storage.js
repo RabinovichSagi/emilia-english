@@ -107,5 +107,14 @@ export async function loadWords() {
   if (!json || !Array.isArray(json.words)) {
     throw new Error('Invalid words.json format: expected { words: [...] }');
   }
-  state.words = json.words;
+  const cleanString = (value) =>
+    typeof value === 'string' ? value.trim() : '';
+  state.words = json.words.map((word) => ({
+    ...word,
+    english: cleanString(word.english),
+    hebrew: cleanString(word.hebrew),
+    image: cleanString(word.image),
+    audio: cleanString(word.audio),
+    initialLetter: cleanString(word.initialLetter),
+  }));
 }
